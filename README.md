@@ -1,15 +1,17 @@
 # E-commerce Sales Prediction: App vs. Website
 
+**Project by: Group 15**
+
 ## 1. Project Overview
 An e-commerce company that sells clothing online and offers in-store style consulting sessions is facing a strategic decision. They need to decide whether to focus their efforts on their **Mobile App experience** or their **Website**.
 
-The goal of this project is to use **Multiple Linear Regression** to predict the `Yearly Amount Spent` by customers and determine which platform (App or Web) contributes more to revenue.
+The goal of our team in this project is to use **Multiple Linear Regression** to predict the `Yearly Amount Spent` by customers and determine which platform (App or Web) contributes more to revenue.
 
 ## 2. Technologies Used
-The analysis was performed using **R Language** with the following key libraries:
-* **Tidyverse (dplyr, ggplot2):** Data manipulation and visualization.
-* **Car & Leaps:** Regression diagnostics and variable selection.
-* **ISLR2 & Boot:** Statistical learning datasets and bootstrapping methods.
+Our team performed the analysis using **R Language** with the following key libraries:
+- **Tidyverse (dplyr, ggplot2):** Data manipulation and visualization.
+- **Car & Leaps:** Regression diagnostics and variable selection.
+- **ISLR2 & Boot:** Statistical learning datasets and bootstrapping methods.
 
 ## 3. Dataset Description
 The dataset `Ecommerce_Customers.csv` contains information on **500 customers**.
@@ -29,11 +31,11 @@ The dataset `Ecommerce_Customers.csv` contains information on **500 customers**.
 We built a Multiple Linear Regression model to quantify the relationship between customer behavior and their spending.
 
 ### Model Performance
-* **R-squared:** `0.9843` (The model explains **98.43%** of the variance in spending, which is an excellent fit).
-* **F-statistic p-value:** `< 2.2e-16` (The model is statistically significant).
+- **R-squared:** `0.9843` (Our model explains **98.43%** of the variance in spending, indicating an excellent fit).
+- **F-statistic p-value:** `< 2.2e-16` (The model is statistically significant).
 
 ### Coefficients & Interpretation
-Based on the regression summary:
+Based on our regression summary:
 
 | Predictor | Coefficient | P-value | Interpretation |
 | :--- | :--- | :--- | :--- |
@@ -43,10 +45,10 @@ Based on the regression summary:
 | **Time on Website** | **+0.44** | `0.326` | **Not Significant.** The p-value is > 0.05, meaning the website usage does not reliably predict spending. |
 
 ## 5. Business Recommendation
-Based on the data analysis, the company has two clear paths:
+Based on the data analysis, our group proposes two strategic paths for the company:
 
-1.  **Develop the App:** The Mobile App is currently working much better than the website. Investing here guarantees a return on investment (coefficient of ~38.71).
-2.  **Fix the Website:** The Website is currently performing poorly (statistically insignificant impact on sales). It likely needs a complete overhaul to match the App's performance.
+1.  **Develop the App:** The Mobile App is currently performing significantly better than the website. Investing here guarantees a return on investment (coefficient of ~38.71).
+2.  **Overhaul the Website:** The Website is currently performing poorly (statistically insignificant impact on sales). It likely needs a complete redesign to match the App's performance.
 
 **Strategic Advice:**
 > Since **Length of Membership** has the highest impact on revenue (**61.58**), the company should also focus on **Customer Retention Programs** to keep users engaged longer, regardless of the platform they use.
