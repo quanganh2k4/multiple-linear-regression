@@ -1,0 +1,728 @@
+---
+title: ' Project 01 - Phát triển bán hàng trên app mobile hay website'
+author: "Nhóm 15"
+date: "2024-12-02"
+output: 
+  html_document:
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+    code_folding: hide
+    df_print: paged
+---
+
+# 1. Các thư viện cần thiết
+```{r}
+library(tidyverse)
+library(ISLR2)
+library(janitor)
+library(boot)
+library(lmPerm)
+library(ipred)
+library(corrplot)
+library(leaps)
+library(car)
+library(broom)
+setwd("D:/XLSLTK/Mini Project/Project_Bai_2")
+```
+# 2. Đọc dữ liệu.
+
+## 2.1 Đọc dữ liệu bằng hàm `read_csv()`
+
+
+```{r}
+df = read_csv("D:/XLSLTK/Mini Project/Project_Bai_2/data/Ecommerce_Customers.csv")
+```
+    
+## 2.2 Kiểm tra các cột của dữ liệu
+
+```{r}
+colnames(df)
+```
+
+Kiểm tra dữ liệu.
+
+```{r}
+glimpse(df)
+```
+
+## 2.3 Kiểm soát tên và dạng dữ liệu
+
+Sử dụng hàm `clean_names()` để xử lý tên của biến chưa đúng quy tắc.
+
+```{r}
+df = df |> clean_names()
+```
+
+Sử dụng `glimpse()` để kiểm tra lại dữ liệu sau khi đã xử lý tên biến.
+
+```{r}
+glimpse(df)
+```
+
+
+Các dạng dữ liệu của các cộng đã đúng định dạng.
+
+## 2.4 Kiểm tra `NA`
+
+Kiểm tra xem dữ liệu có chứa các giá trị `NA` hay không. Nếu có thì thực hiểm kiểm tra xem dữ liệu bị khuyết bao nhiêu %
+
+Để thực hiện tính số lượng giá trị `NA` của các cột trong dữ liệu ta sử dụng hàm `colSums()` kết hợp với hàm `is.na()`.
+
+
+```{r}
+colSums(is.na(df))
+```
+
+
+Như vậy thì các cột của dữ liệu không chứa các giá trị `NA`. Vậy thì ta không cần kiểm tra tỷ lệ bị khuyết của dữ liệu.
+
+## 2.5 Kiểm tra dữ liệu bị trùng lặp
+
+Để kiểm tra xem dữ liệu có bị trùng lặp hay không ta sử dụng hàm `get_dupes()` từ thư viện `janitor`.
+
+
+```{r}
+df |> get_dupes()
+```
+
+Như vậy thì dữ liệu trên không có các giá trị trùng lặp.
+
+## 2.6 Thống kê giá trị
+
+Sử dụng `summary()` để thống kê các giá trị
+
+```{r}
+summary(df)
+```
+
+Ta có thể tạo ra các hàm sau để tạo 1 bảng dữ liệu tổng hợp cho các biến trong dữ liệu.
+
+**Bước 1:** Sử dụng hàm `summarise()` kết hợp với `across()` để tính các ước lượng thống kê, kết quả sau
+ đó được lưu lại trong một biến là `df_sum`
+
+Vì trong dữ liệu chỉ có các biến `avg_session_length`, `time_on_app`, `time_on_website`, `length_of_membership` và `yearly_amount_spent` là các biến định lượng nên trong hàm `across()` ta chỉ lấy 5 biến đó.
+
+
+```{r}
+df_sum = df |> 
+    summarise(across(c("avg_session_length", 
+                       "time_on_app", 
+                       "time_on_website", 
+                       "length_of_membership", 
+                       "yearly_amount_spent"),
+         list(gtnn = min, gtln = max, tv = median,
+              tb = mean, dlc = sd, q1 = ~ quantile(., 0.25), 
+              q3 = ~ quantile(., 0.75)),
+                    .names = "{.col}.{.fn}"))
+```
+
+
+```{r}
+df_sum = df_sum |> 
+  mutate(across(everything(), ~ {
+    attr(.x, "names") <- NULL
+    .x
+  }))
+```
+
+**Bước 2:** Để tạo ra một bảng kết quả dễ nhìn hơn, ta dùng đoạn lệnh sau:
+
+
+```{r}
+df_stats_tidy = df_sum |>
+  gather(ten, gt) |>
+  separate(ten, into = c("ten", "tk"), sep = "\\.") |>
+  spread(tk, gt) |>
+  select(ten, gtnn, q1, tv, tb, dlc, q3, gtln)
+print.data.frame(df_stats_tidy, digits = 4)
+```
+
+# 3. Khám phá dữ liệu
+
+Ta sẽ vẽ biểu đồ phân tán (*scatter plot*) của 2 biến `time_on_web` và `yearly_amount_spent` để mô tả sự mối liên hệ giữa hai biến. Để vẽ biểu đồ phân tán ta sử dụng hàm `geom_point()` trong thư viện `ggplot`.
+
+```{r}
+ggplot(df, aes(x = `time_on_website`, y = `yearly_amount_spent`)) +
+  geom_point(color = "#4c9a2a") +  
+  labs(x = "Time on Website", y = "Yearly Amount Spent") +
+  geom_point() + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Qua biểu đồ phân tán trên, ta có thể đưa ra được nhận định là không có mối tương quan tuyến tính giữa hai biến `time_on_web` và `yearly_amount_spent`. Tức là việc dành nhiều thời gian hơn trên trang web không dẫn đến sự gia tăng hoặc giảm đáng kể trong chi tiêu năm.
+
+Ta sẽ vẽ biểu đồ phân tán (*scatter plot*) của 2 biến `time_on_app` và `yearly_amount_spent` để mô tả sự mối liên hệ giữa hai biến. Để vẽ biểu đồ phân tán ta sử dụng hàm `geom_point()` trong thư viện `ggplot`.
+
+```{r}
+ggplot(df, aes(x = `time_on_app`, y = `yearly_amount_spent`)) +
+  geom_point(color = "#4c9a2a") +    
+  labs(x = "Time on App", y = "Yearly Amount Spent") +
+  geom_point() + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Dựa vào biểu đồ phân tán trên cho thấy được dữ liệu có xu hướng tăng nhẹ từ trái sang phải. Điều này cho thấy rằng, có một sự tương quan tuyến tính nhẹ giữa hai biến `time_on_app` và `yearly_amount_spent`. Tức là khi `time_on_app` (thời gian tương tác trên mobile app) tăng lên, `yearly_amount_spent` (số tiền chi tiêu trung bình năm) có thể cũng tăng, nhưng không tăng nhiều.
+
+Kiểm tra thời gian tương tác trên website (`Time on Website`) với thời gian là khách hàng thành viên (`Length of Membership`).
+
+```{r}
+ggplot(df, aes(x = `time_on_website`, y = `length_of_membership`)) +
+       geom_point() +
+       labs(y = "Length of Membership", 
+            x = "Time on Website") +
+       theme_minimal()
+```
+
+
+Qua biểu đồ phân tán (*scatter plot*) trên thì cho ra được 1 biểu đồ rất khó để xác định tính tương quan. Do đó để biểu diễn mối quan hệ giữa hai biến này thì ta sử dụng biểu đồ hexbin khi đó dữ liệu sẽ được chia thành các ô lục giác trên không gian 2 chiều (**2D**) bằng cách sử dụng hàm `geom_hex()` trong thư viện `hexbin`.
+
+```{r}
+# import library
+library(hexbin)
+```
+
+
+```{r}
+ggplot(df, aes(x = `time_on_website`, y = `length_of_membership`)) +
+       geom_hex(bins = 30) +
+       labs(y = "Length of Membership", 
+            x = "Time on Website") +
+       theme_minimal()
+```
+
+Dựa vào biểu đồ trên, ta có thể có được một số nhận xét sau: 
+
+- Phần lớn các điểm dữ liệu tập trung ở vùng trung tâm của biểu đồ, cụ thể là khoảng từ 36 đến 38 trên trục **"Time on Website"** và từ 3 đến 5 năm trên trục **"Length of Membership (years)"**.
+
+- Điều này cho thấy mối quan hệ tập trung giữa thời gian tương tác trên website và thời gian là khách hàng thành viên.
+
+- Một số điểm nằm ngoài khu vực tập trung, đặc biệt là ở vùng thời gian sử dụng website thấp hơn (34–35) và cao hơn (gần 40), nhưng số lượng rất ít.
+
+- Dữ liệu hơi phân tán và có xu hướng tập trung ở giữa. Điều này cho thấy được là không có mối tương quan mạnh giữa hai biến này.
+
+Kiểm tra thời gian tương tác trên mobile app (`Time on App`) với thời gian là khách hàng thành viên (`Length of Membership`).
+
+
+```{r}
+ggplot(df, aes(x = `time_on_app`, y = `length_of_membership`)) +
+      geom_hex(bins = 30) + 
+      scale_fill_gradient(high = "green") +
+      theme_minimal() +
+      labs(x = "Time on App",
+           y = "Length of Membership")
+```
+
+Dựa vào biểu đồ trên, ta có thể có được một số nhận xét sau:
+
+- Phần lớn các điểm dữ liệu tập trung ở vùng trung tâm của biểu đồ, cụ thể là khoảng từ 11 đến 13 trên trục **"Time on App"** và từ 3 đến 5 năm trên trục **"Length of Membership"**. Điều này cho thấy mối quan hệ tập trung giữa thời gian tương tác trên mobile app và thời gian là khách hàng thành viên.
+
+- Khi rời xa trung tâm, mật độ dữ liệu giảm (màu xanh lá cây mờ dần, chuyển sang màu tối hơn).
+
+- Dữ liệu phân bố rải rác và ngẫu nhiên, không có xu hướng tăng hay giảm đồng đều.
+
+- Dữ liệu trải rộng trên một khoảng giá trị nhất định, nhưng phần lớn vẫn tập trung xung quanh trung tâm.
+
+Để làm rõ hơn những khẳng định trên ta sẽ vẽ biểu đồ tương quan của tất cả các biến định lượng có trong dữ liệu. 
+
+Tạo ma trận tương quan cho các biến định lượng trong dữ liệu.
+
+
+```{r}
+numeric_data = df[, sapply(df, is.numeric)]
+corr_matrix = cor(numeric_data, method = "pearson")
+```
+
+Vẽ biểu đồ tương quan của các biến định lượng để kiểm tra hệ số tương quan của từng cặp biến trong dữ liệu. Sử dụng hàm `corrplot()` trong thư viện `corrplot`.
+
+
+```{r}
+corrplot(
+  corr_matrix, 
+  method = "color", 
+  addCoef.col = "black",        
+  tl.col = "black",             
+  tl.srt = 45,                  
+  is.corr = TRUE                
+)
+```
+
+Dựa vào biểu đồ tương quan của các biến `avg_session_length`, `time_on_app`, `time_on_website`, `length_of_membership` và `yearly_amount_spent` phía trên ta có được:
+
+- Biến `length_of_membership` (Thời gian là khách hàng thành viên) có sự tương quan mạnh đối với biến `yearly_amount_spent` (Chi phí mua hàng trung bình năm) với 0.81
+
+- Biến `time_on_app` (Thời gian tương tác trên mobile app) có sự tương quan mạnh đối với biến `yearly_amount_spent` (Chi phí mua hàng trung bình năm) với 0.50
+
+- Biến `time_on_website` có sự tương quan rất thấp hoặc gần như không có (hệ số bằng 0 hoặc âm nhẹ). Điều này có thể chỉ ra rằng `time_on_website` không phải là một yếu tố quan trọng ảnh hưởng đến các yếu tố khác.
+
+Nếu so sánh với thời gian tương tác trên website, có thể thấy rằng không có mối tương quan nào tức là việc khách hàng dành nhiều thời gian hơn trên website không nhất thiết dẫn đến việc sẽ mua hàng. 
+
+Vì biến `length_of_membership` (Thời gian là khách hàng thành viên) có sự tương quan mạnh đối với biến `yearly_amount_spent` (Chi phí mua hàng trung bình năm) nên ta sẽ mong muốn dự đoán được chi phí mua hàng trung bình năm `yearly_amount_spent` thông qua thời gian là khách thành viên `length_of_membership`.
+
+
+```{r}
+ggplot(df, mapping = aes(x = length_of_membership, y = yearly_amount_spent)) +
+    geom_point() +
+    geom_smooth(formula = y ~ x, method = "lm", se = TRUE, color = "blue") +
+    theme_bw() +
+    labs(x = "Length of Membership", y = "Yearly Amount Spent", title = "Scatterplot with Regression Line")
+```
+
+**Qua đó ta có thể đưa ra giả thuyết rằng công ty nên đầu tư vào nền tảng mobile app hơn là đầu tư vào nền tảng website nhưng cũng cần thực hiện xây dựng các mô hình hồi quy và chọn ra một mô hình tốt để có thể đưa ra quyết định cuối cùng.**
+
+# 4. Xây dựng mô hình hồi quy
+
+Dựa vào các biến trên ta có được các mô hình sau:
+
+1. Mô hình hồi quy tuyến tính đơn.
+
+   - MH1: $\text{yearly_amount_spent}$ = $\beta_0 + \beta_1 \times \text{avg_session_length} + \epsilon$
+   
+   - MH2: $\text{yearly_amount_spent}$ = $\beta_0 + \beta_1 \times \text{time_on_app} + \epsilon$
+   
+   - MH3: $\text{yearly_amount_spent}$ = $\beta_0 + \beta_1 \times \text{length_of_membership} + \epsilon$
+   
+   - MH4: $\text{yearly_amount_spent}$ = $\beta_0 + \beta_1 \times \text{time_on_website} + \epsilon$
+   
+2. Mô hình hồi quy đa biến.
+
+   - MH5: $\text{yearly_amount_spent}$ = $\beta_0 + \beta_1 \times \text{avg_session_length} + \beta_2 \times \text{time_on_app} + \epsilon$
+   
+   - MH6: $\text{yearly_amount_spent}$ = $\beta_0 + \beta_1 \times \text{time_on_website} + \beta_2 \times \text{time_on_app} + \epsilon$
+   
+   - MH7: $\text{yearly_amount_spent}$ = $\beta_0 + \beta_1 \times \text{avg_session_length} + \beta_2 \times \text{time_on_app} + \beta_3 \times \text{time_on_website} + \\ \beta_4 \times \text{length_of_membership} + \epsilon$
+   
+   - Và còn nhiều mô hình khác.
+
+## 4.1 Mô hình hồi quy tuyến tính đơn
+
+Vì biến `length_of_membership` (Thời gian là khách hàng thành viên) có sự tương quan mạnh đối với biến `yearly_amount_spent` (Chi phí mua hàng trung bình năm) nên chọn biến `length_of_membership` để dự đoán biến `yearly_amount_spent`.
+
+Biến phản hồi được quan tâm là `yearly_amount_spent` - Chi phí mua hàng trung bình năm. Mô hình được đề xuất là:
+$$\text{yearly_amount_spent}_{i} = \beta_0 + \beta_1 \times \text{length_of_membership}_{i}$$
+
+
+Ta ước lượng mô hình này như sau:
+
+
+```{r}
+md_df = lm(yearly_amount_spent ~ length_of_membership, data = df)
+```
+
+Kết quả tổng hợp
+
+
+```{r}
+summary(md_df)
+```
+
+Khi đó, ta được một số nhận xét sau:
+
+- Nếu thời gian là khách thành viên tăng lên 10 đơn vị thì chi phí mua hàng trung bình năm sẽ tăng lên 642.19 đơn vị.
+
+- Hệ số này có ý nghĩa thống kê vì giá trị `p-value` < 0.001.
+
+- Giá trị R-squared (0.6546) cho thấy 65.46\% sự biến động trong chi tiêu hàng năm của khách hàng có thể được giải thích bởi thời gian họ là khách thành viên. Điều này thể hiện rằng `length_of_membership` là một yếu tố quan trọng ảnh hưởng đến chi tiêu.
+
+## 4.2 Mô hình hồi quy đa biến
+Trước hết, chúng ta nên xây dựng một mô hình tuyến tính bao gồm tất cả các biến dự đoán hiện có, để có thể hiểu rõ hơn về mô hình cũng như sử dụng kết quả của mô hình này cho việc lựa chọn mô hình tiếp theo.
+
+$$\text{yearly_amount_spent} = \beta_0 + \beta_1 \times \text{avg_session_length} + \beta_2 \times \text{time_on_app} + \beta_3 \times \text{time_on_website} + \beta_4 \times \text{length_of_menbership} + \epsilon$$
+
+Ta ước lượng mô hình này như sau:
+
+```{r}
+model_df = lm(yearly_amount_spent ~ avg_session_length + time_on_app + time_on_website + length_of_membership, data = df)
+```
+
+Vì các cặp biến đã xét ở trên có biến `length_of_membership` có sự tương quan mạnh với biến `yearly_amount_spent` nên  hiện tượng đa cộng tuyến có thể xảy ra nếu chọn cặp biến này.
+
+Nên ta sẽ kiểm tra hiện tượng đa cộng tuyến bằng hàm `vif` trong gói `car`.
+
+```{r}
+vif(model_df)
+```
+Với $j = \overline{1, 4}$, ta thấy rằng $VIF_j$ gần bằng 1 nên không có hiện tượng đa cộng tuyến. Do đó việc lựa chọn mô hình này là hợp lý.
+
+Kết quả tổng hợp.
+```{r}
+summary(model_df)
+```
+
+Khi đó, ta được một số nhận xét sau:
+
+- Nếu trung bình thời gian tương tác tăng lên 10 đơn vị thì chi phí mua hàng trung bình năm sẽ tăng lên 257.343 đơn vị.
+
+- Nếu thời gian tương tác trên website tăng lên 10 đơn vị thì chi phí mua hàng trung bình năm sẽ tăng lên 387.092 đơn vị.
+
+- Nếu thời gian tương tác trên mobile app tăng lên 10 đơn vị thì chi phí mua hàng trung bình năm sẽ tăng lên 4.367 đơn vị.
+
+- Nếu thời gian là khách thành viên tăng lên 10 đơn vị thì chi phí mua hàng trung bình năm sẽ tăng lên 615.773 đơn vị.
+
+- Hệ số này có ý nghĩa thống kê vì giá trị `p-value` < 0.001.
+
+- Giá trị R-squared (0.9843) cho thấy 98.43\% sự biến động trong chi tiêu hàng năm của khách hàng có thể được giải thích bởi trung bình thời gian tương tác, thời gian tương tác trên website, thời gian tương tác trên mobile app và thời gian là khách hàng thành viên.
+
+Tiếp theo, ta áp dụng phương pháp bootstrap để ước lượng khoảng tin cậy và kiểm định giả thuyết $\beta_j = 0$.
+
+Trước tiên, ta định hàm `fun_boot_model()` để thực hiện ước tính mỗi lần lặp lấy mẫu:
+
+```{r}
+fun_boot_model = function(data, ind, formula, ...)
+{
+    data_new = data[ind,]
+    out_md = lm(formula = formula, data = data_new, ...)
+    return(out_md$coefficients)
+}
+```
+
+```{r}
+set.seed(84)
+out_boot_model_df = boot(data = df, statistic = fun_boot_model, R = 1000, 
+                      formula = yearly_amount_spent ~ avg_session_length + time_on_app + time_on_website + length_of_membership)
+out_boot_model_df
+```
+Sử dụng hàm `boot.ci()` để ước tính khoảng tin cậy 95\%, của các hệ số, tương ứng với đối số `index`:
+
+Hệ số thứ nhất.
+```{r}
+boot.ci(out_boot_model_df, index = 1, type = "perc", conf = 0.95)
+```
+
+Hệ số thứ hai.
+
+```{r}
+boot.ci(out_boot_model_df, index = 2, type = "perc", conf = 0.95)
+```
+
+Hệ số thứ ba.
+
+```{r}
+boot.ci(out_boot_model_df, index = 3, type = "perc", conf = 0.95)
+```
+
+Hệ số thứ tư.
+
+```{r}
+boot.ci(out_boot_model_df, index = 4, type = "perc", conf = 0.95)
+```
+
+Hệ số thứ năm.
+
+```{r}
+boot.ci(out_boot_model_df, index = 5, type = "perc", conf = 0.95)
+```
+
+Histogram của chỉ số thứ nhất đến thứ năm.
+```{r}
+par(mfrow = c(3, 2))
+for (i in 1:5)
+{
+    hist(out_boot_model_df$t[, i], 
+         col = "lightblue", 
+         main = paste("Histogram of beta ", i), 
+         xlab = paste("Beta ", i), 
+         ylab = "Frequency")
+}
+```
+
+Tính toán giá trị `p_value` cho giả thuyết $\beta_j = 0$:
+
+```{r}
+pval_adv = sapply(1:ncol(out_boot_model_df$t), function(i) 
+{
+    qt = mean(out_boot_model_df$t[, i] <= 0)
+    if (qt < 0.5) 
+    {
+        return(2 * qt)
+    } else 
+    {
+        return(2 * (1 - qt))
+    }
+})
+
+pval_adv
+```
+
+Giả sử ta có thông tin rằng nếu trung bình thời gian tương tác tăng lên 10 đơn vị, thời gian tương tác trên website tăng lên 15 đơn vị, thời gian tương tác trên mobile app tăng lên 20 đơn vị, thời gian là khách thành viên tăng lên 25 đơn vị. Khi đó dự vào mô hình, ta có thể ước tính được trung bình chi phí mua hàng trung bình năm.
+
+```{r}
+predict(model_df, newdata = data.frame(avg_session_length = 10, time_on_app = 20, time_on_website = 15, length_of_membership = 25))
+```
+
+Ta sử dụng phương pháp bootstrap để tìm khoảng tin cậy cho chi phí mua hàng trung bình năm:
+
+```{r}
+x_adv = c(1, 10, 20, 15, 25)
+y_adv = apply(out_boot_model_df$t, 1, function(x)
+{
+    x_adv %*% x
+})
+quantile(y_adv, probs = c(0.025, 0.975))
+```
+
+Như vậy, trung bình chi phí mua hàng trung bình năm được tiên lượng theo mô hình này, có giá trị thay đổi từ (1490.13, 1561.9) với độ tin cậy 95%.
+
+$\bullet$ Khoảng tiên đoán cho trung bình chi phí mua hàng trung bình năm dựa vào mô hình.
+
+Ta có thể sử dụng phương pháp bootstrap để ước lượng khoảng tiên đoán cho chi phí mua hàng trung bình năm dựa trên mô hình:
+
+```{r}
+resid_adv = residuals(model_df)
+y_adv_pc_pci = y_adv + sample(resid_adv, size = 1000, replace = TRUE)
+quantile(y_adv_pc_pci, probs = c(0.025, 0.975))
+```
+
+Như vậy, ta có thể ước lượng được khoảng tiên đoán cho trung bình chi phí mua hàng trung bình năm dựa vào mô hình là (1488.108, 1568.933) đơn vị.
+
+$\bullet$ Tính **RMSE** bằng phương pháp *k-fold Cross-Validation*
+
+Với $k = 10$:
+```{r}
+set.seed(150)
+k = 10
+MSE.k = vector()
+RMSE.k = vector()
+n = nrow(df)
+p = 2 
+lower = seq(1, n, by = n/k)
+upper = c(lower[-1] - 1, n)
+
+for(i in 1:k) 
+{
+    fold = c(lower[i]: upper[i])
+    train = df[-fold, ]
+    test = df[fold, ]
+  
+    lm.fit = lm(yearly_amount_spent ~ avg_session_length + time_on_app + time_on_website + length_of_membership, data = train)
+    lm.pred = predict(lm.fit, newdata = test)
+    MSE.k[i] = mean((lm.pred - test$yearly_amount_spent)^2)
+    RMSE.k[i] = sqrt(mean((lm.pred - test$yearly_amount_spent)^2))
+}
+MSE.kfold = mean(MSE.k)
+RMSE.kfold = mean(RMSE.k)
+cat("MSE: ", sprintf("%.3f", MSE.kfold))
+cat("\nRMSE: ", sprintf("%.3f", RMSE.kfold))
+```
+# 5. Lựa chọn mô hình
+Từ những mô hình trên, ta vẫn chưa thể kết luận được là những mô hình trên đâu là mô hình tốt nhất. Do đó ta sẽ thực hiện các phương pháp để tìm ra mô hình hồi quy tốt nhất.
+
+Ta có thể sử dụng 1 trong 3 phương pháp sau:
+
+- Hồi quy từng bước.
+
+- Hồi quy từng bước và cross - validation.
+
+- Phương pháp co hệ số.
+
+Vì không có hiện tượng đa cộng tuyến nên ta sẽ sử dụng được phương pháp hồi quy từng bước và cross - validation hoặc hồi quy từng bước.
+
+Ở đây ta sử dụng phương pháp hồi quy từng bước để lựa chọn mô hình tốt nhất.
+
+Sử dụng hàm `regsubsets()` để tìm tập biến tốt nhất (chứa tối đa 5 biến) cho mô hình dự đoán chi phí mua hàng trung bình năm.
+
+```{r}
+out_subset_df = regsubsets(yearly_amount_spent ~ . - email - avatar - address, data = df, nvmax = 5,
+                                method = "exhaustive")
+```
+Để biết được tập nào tốt nhất trong số các tập từ $\mathcal{M}_1, ..., \mathcal{M}_5$, ta sử dụng chỉ số Mallow's Cp.
+
+```{r}
+sum_out_subset_df = summary(out_subset_df)
+sum_out_subset_df$cp
+```
+
+Kết quả cho thấy tập kết quả thứ 4 (chứa 4 biến) là tốt nhất. Ta có thể truy xuất kết quả các biến được lựa chọn:
+
+```{r}
+sum_out_subset_df$which[which.min(sum_out_subset_df$cp), ]
+```
+
+`TRUE` có nghĩa là được chọn, `FALSE` có nghĩa là không được chọn.
+
+Kết quả ước lượng hệ số của mô hình tương ứng với tập này là:
+
+```{r}
+coef(out_subset_df, which.min(sum_out_subset_df$cp))
+```
+
+Ta thấy rằng mô hình tốt nhất là mô hình chứa 4 biến: `avg_session_length`, `time_on_app`, `time_on_website`, `length_of_membership`.
+
+# 6. Chuẩn đoán mô hình
+
+```{r}
+md <- lm(yearly_amount_spent ~ avg_session_length + time_on_app + length_of_membership, data = df)
+summary(md)
+```
+
+Kiểm tra tính tuyến tính của mô hình
+
+```{r}
+augmented_df <- augment(md, data = df)
+ggplot(data = augmented_df, mapping = aes(x=.fitted, y=.resid))+
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "Fitted values", y = "Residuals") +
+  theme_bw()
+```
+
+Nhận xét: Hình vẽ cho thấy không có xu hướng đường cong đáng kể.
+
+$\Rightarrow$ Giảđịnh về tính tuyến tính của mô hình là phù hợp
+
+Kiểm tra tính tuyến tính từng phần
+
+```{r}
+terms <- predict(md, type = "terms")
+head(terms)
+partial_resid_md <- residuals(md, type = "partial")
+head(partial_resid_md)
+```
+
+$\bullet$ `avg_session_length`
+
+```{r}
+data_avg_session_length_md = tibble(
+  avg_session_length = df$avg_session_length,
+  terms_avg_session_length = terms[, "avg_session_length"],
+  partial_resid_avg_session_length = partial_resid_md[, "avg_session_length"]
+)
+```
+
+```{r}
+
+ggplot(data_avg_session_length_md, mapping = aes(avg_session_length, partial_resid_avg_session_length)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE, linetype = "dashed",
+              color = "forestgreen") +
+  geom_line(aes(x = avg_session_length, y = terms_avg_session_length), color = "blue") +
+  labs(x = "avg_session_length", y = "Partial Residuals") +
+  theme_bw()
+```
+
+Nhận xét: Có sự tuyến tính từng phần của thành phần avg_session_length trong mô hình.
+
+$\bullet$ `time_on_app`
+
+```{r}
+data_time_on_app_md <- tibble(
+  time_on_app = df$time_on_app,
+  terms_time_on_app = terms[, "time_on_app"],
+  partial_resid_time_on_app = partial_resid_md[, "time_on_app"]
+)
+```
+
+```{r}
+ggplot(data_time_on_app_md, mapping = aes(time_on_app, partial_resid_time_on_app)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE, linetype = "dashed",
+              color = "forestgreen") +
+  geom_line(aes(x = time_on_app, y = terms_time_on_app), color = "blue") +
+  labs(x = "time_on_app", y = "Partial Residuals") +
+  theme_bw()
+```
+
+Nhận xét: Có sự tuyến tính từng phần của thành phần time_on_app trong mô hình
+
+<!-- $\bullet$ `time_on_website` -->
+
+<!-- ```{r} -->
+<!-- data_time_on_website_md <- tibble( -->
+<!--   time_on_website = df$time_on_website, -->
+<!--   terms_time_on_website = terms[, "time_on_website"], -->
+<!--   partial_resid_time_on_website = partial_resid_md[, "time_on_website"] -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- ggplot(data_time_on_website_md, mapping = aes(time_on_website, partial_resid_time_on_website)) + -->
+<!--   geom_point() + -->
+<!--   geom_smooth(method = "loess", se = FALSE, linetype = "dashed", -->
+<!--               color = "forestgreen") + -->
+<!--   geom_line(aes(x = time_on_website, y = terms_time_on_website), color = "blue") + -->
+<!--   labs(x = "time_on_website", y = "Partial Residuals") + -->
+<!--   theme_bw() -->
+<!-- ``` -->
+
+<!-- Nhận xét: Khong có sự tuyến tính từng phần của thành phần time_on_website trong mô hình -->
+
+$\bullet$ `length_of_membership`
+
+```{r}
+data_length_of_membership_md <- tibble(
+  length_of_membership = df$length_of_membership,
+  terms_length_of_membership = terms[, "length_of_membership"],
+  partial_resid_length_of_membership = partial_resid_md[, "length_of_membership"]
+)
+```
+
+```{r}
+ggplot(data_length_of_membership_md, mapping = aes(length_of_membership, partial_resid_length_of_membership)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE, linetype = "dashed",
+              color = "forestgreen") +
+  geom_line(aes(x = length_of_membership, y = terms_length_of_membership), color = "blue") +
+  labs(x = "length_of_membership", y = "Partial Residuals") +
+  theme_bw()
+```
+
+Nhận xét: Có sự tuyến tính từng phần của thành phần `length_of_membership` trong mô hình
+
+Kiểm tra tính đồng nhất phương sai
+
+```{r}
+ggplot(md, aes(.fitted, sqrt(abs(.stdresid)))) +
+  geom_point(na.rm = TRUE) +
+  geom_smooth(method = "loess", na.rm = TRUE, se = FALSE) +
+  labs(x = "Fitted Values", y = expression(sqrt("|Standardized residuals|"))) +
+  theme_bw()
+```
+
+Nhận xét: Hình vẽ cho thấy sự đồng nhất phương sai của mô hình
+
+Kiểm tra điểm ngoại lai trong mô hình
+
+```{r}
+ggplot(md, aes(.hat, .stdresid)) +
+  geom_point(aes(size = .cooksd)) +
+  xlab("Leverage") + ylab("Standardized Residuals") +
+  scale_size_continuous("Cook's Distance", range = c(1, 6)) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+std_resid_md <- rstandard(md)
+hat_values_md <- hatvalues(md)
+cooks_D_md <- cooks.distance(md)
+
+data_cooks_md <- tibble(id_point = 1:nrow(df),
+                            rstand = std_resid_md, hats = hat_values_md,
+                            cooks = cooks_D_md, yearly_amount_spent = df$yearly_amount_spent)
+data_cooks_md |> arrange(desc(cooks))
+```
+
+Nhận xét: Vì các `Cook's Distance` của từng điểm dữ liệu trên đều nhỏ hơn 0.5 nên không có giá trị ngoại lai.
+
+# 7. Kết luận
+
+Vì mô hình hồi quy tốt nhất là gồm 3 biến độc lập `avg_session_length`, `time_on_app`, `length_of_membership` nên ta sẽ xây dựng mô hình hồi quy tuyến tính và tính hệ số tương quan. Điều đó càng thêm khẳng định được cho giả thuyết rằng công ty nên đầu tư vào nền tảng mobile app hơn là đầu tư vào nền tảng website.
+
+```{r}
+model = lm(yearly_amount_spent ~ avg_session_length + time_on_app + length_of_membership, data = df)
+coefficients = coef(model)
+print(coefficients)
+```
+
+Diễn giải các hệ số hồi quy:
+
+- Khi giữ cố định các yếu tố khác, việc tăng 1 đơn vị trong Trung bình thời gian tương tác (Avg. Session Length) sẽ dẫn tới việc tăng 25,72 đơn vị của chi phí mua hàng trung bình năm.
+
+- Khi giữ cố định các yếu tố khác, việc tăng 1 đơn vị trong thời gian tương tác trên mobile app (Time on App) sẽ dẫn tới việc tăng 38,74 đơn vị của chi phí mua hàng trung bình năm.
+
+- Khi giữ cố định các yếu tố khác, việc tăng 1 đơn vị trong Thời gian là khách hàng thành viên (Length of Membership) sẽ dẫn tới việc tăng 61,56 đơn vị của chi phí mua hàng trung bình năm.
+
+Hệ số càng cao, mối quan hệ giữa biến độc lập và biến mục tiêu càng mạnh, trong trường hợp này là Chi phí mua hàng trung bình năm (**Yearly Amount Spent**).
+
+**Kết luận**: Công ty nên tập trung vào việc phát triển ứng dụng di động hơn là trang web. Điều này có thể được hiểu qua việc thời gian tương tác trên ứng dụng di động có mối quan hệ mạnh mẽ với chi phí mua hàng trung bình năm. Đồng thời, thời gian là khách hàng thành viên cũng ảnh hưởng mạnh mẽ đến chi phí mua hàng trung bình năm.
